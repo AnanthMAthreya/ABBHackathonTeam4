@@ -1,29 +1,56 @@
-from fastapi import FastAPI, Body
-app = FastAPI()
+# Path: ml-service-python/main.py
+from fastapi import FastAPI, HTTPException
+import joblib
 
-@app.post("/train-model")
-def train_model(payload: dict = Body(...)):
-    return {
-        "status": "trained",
-        "metrics": {"accuracy": 0.85, "precision": 0.82, "recall": 0.80, "f1": 0.81},
-        "charts": {"trainingCurve": None, "confusionMatrix": None}
-    }
+# === THIS IS THE FIX ===
+# We are changing the imports from relative (.models) to absolute (core.models)
+# because main.py is no longer inside a package.
+from core.models import TrainRequest, TrainResponse, PredictRequest, PredictResponse
+from core import ml_handler
+# =======================
 
-# backend polls this in batches
-@app.post("/simulate-batch")
-def simulate_batch(payload: dict = Body(...)):
-    cursor = int(payload.get("cursor", 0))
-    take   = int(payload.get("take", 25))
-    events = []
-    for i in range(cursor, cursor + take):
-        events.append({
-            "timestamp": "2021-10-01T00:00:01",
-            "sampleId": i,
-            "prediction": "pass" if i % 3 else "fail",
-            "confidence": 0.75,
-            "temperature": 25.0,
-            "pressure": 1013.0,
-            "humidity": 40.0
-        })
-    # after ~200 records, stop
-    return events if cursor < 200 else []
+app = FastAPI(
+    title="IntelliInspect ML Service",
+    version="1.0.0"
+)
+
+# --- The rest of the file is unchanged and correct ---
+
+model_is_trained = False
+
+@app.on_event("startup")
+def startup_event():
+    global model_is_trained
+    try:
+        joblib.load(ml_handler.MODEL_PATH)
+        model_is_trained = True
+    except FileNotFoundError:
+        model_is_trained = False
+
+@app.get("/", tags=["Health Check"])
+def read_root():
+    return {"status": "ML service is running"}
+
+@app.post("/train-model", response_model=TrainResponse, response_model_by_alias=True, tags=["Training"])
+def train(request: TrainRequest):
+    if not request.train_data or not request.test_data:
+        raise HTTPException(status_code=400, detail="Training and testing data cannot be empty.")
+
+    try:
+        metrics = ml_handler.train_model(request.train_data, request.test_data)
+        global model_is_trained
+        model_is_trained = True
+        return TrainResponse(**metrics)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
+def predict(request: PredictRequest):
+    if not model_is_trained:
+        raise HTTPException(status_code=400, detail="Model is not trained yet. Please call /train-model first.")
+
+    try:
+        result = ml_handler.predict_single(request.features)
+        return PredictResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -1,3 +1,6 @@
+# Path: docker-compose.yml
+version: "3.8"
+
 services:
   backend-dotnet:
     build: ./backend-dotnet
@@ -11,7 +14,12 @@ services:
       - ml-service-python
 
   ml-service-python:
-    image: tiangolo/uvicorn-gunicorn-fastapi:python3.11
+    # --- CHANGE IS HERE ---
+    # Instead of pulling a generic image, we now build our custom one.
+    build:
+      context: ./ml-service-python
+      dockerfile: Dockerfile
+    # ----------------------
     volumes:
       - ./ml-service-python:/app
       - ./data:/data
