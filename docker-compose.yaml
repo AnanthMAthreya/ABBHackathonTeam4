@@ -1,0 +1,30 @@
+# Path: docker-compose.yml
+version: "3.8"
+
+services:
+  backend-dotnet:
+    build: ./backend-dotnet
+    ports:
+      - "5000:5000"
+    environment:
+      ML_SERVICE_URL: http://ml-service-python:8000
+    volumes:
+      - ./data:/data
+    depends_on:
+      - ml-service-python
+
+  ml-service-python:
+    # --- CHANGE IS HERE ---
+    # Instead of pulling a generic image, we now build our custom one.
+    build:
+      context: ./ml-service-python
+      dockerfile: Dockerfile
+    # ----------------------
+    volumes:
+      - ./ml-service-python:/app
+      - ./data:/data
+    environment:
+      MODULE_NAME: main
+      PORT: 8000
+    ports:
+      - "8000:8000"
